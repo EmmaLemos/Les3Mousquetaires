@@ -1,0 +1,48 @@
+body {
+    background-color: #f4f1ea;
+    font-family: 'Playfair Display', serif;
+    text-align: center;
+    color: #5a3e1b;
+    padding: 20px;
+}
+header {
+    font-family: 'Great Vibes', cursive;
+    font-size: 70px;
+    margin-bottom: 10px;
+}
+.container {
+    max-width: 800px;
+    margin: auto;
+    padding: 20px;
+    border: 3px solid #5a3e1b;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+}
+.button {
+    display: inline-block;
+    padding: 10px 20px;
+    font-size: 20px;
+    color: white;
+    background: #5a3e1b;
+    text-decoration: none;
+    border-radius: 5px;
+    margin-top: 20px;
+}
+.button:hover {
+    background: #8b5e34;
+}
+
+.image-frame {
+    border: 10px solid #5a3e1b;
+    padding: 10px;
+    background: #fff5e1;
+    display: inline-block;
+    box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.2);
+    border-radius: 15px;
+    margin: 20px 0;
+}
+.image-frame img {
+    width: 60%;
+    height: auto;
+    border-radius: 10px;
+}

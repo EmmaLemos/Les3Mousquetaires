@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Renaissance Media Uploader</title>
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f1ea;
+            font-family: 'Playfair Display', serif;
+            text-align: center;
+            color: #5a3e1b;
+            padding: 20px;
+        }
+        header {
+            font-family: 'Great Vibes', cursive;
+            font-size: 50px;
+            margin-bottom: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 20px;
+            border: 3px solid #5a3e1b;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+        }
+        .upload-box {
+            padding: 20px;
+            border: 2px dashed #5a3e1b;
+            border-radius: 10px;
+            background: #fff5e1;
+            margin: 20px 0;
+        }
+        .upload-box input {
+            display: none;
+        }
+        .upload-label {
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            font-size: 20px;
+            color: white;
+            background: #5a3e1b;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #8b5e34;
+        }
+        .status-message {
+            margin-top: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #5a3e1b;
+        }
+        .preview-container {
+            margin-top: 20px;
+            display: none; /* Hidden until a file is selected */
+        }
+    </style>
+</head>
+<body>
+    <header>Générateur de sous-titres</header>
+    <div class="container">
+        <p><em>"L'art de la vision et du son réunis en une seule expérience, le texte."</em></p>
+        
+        <div class="upload-box">
+            <label for="file-upload" class="upload-label">Cliquez ici pour télécharger une vidéo ou un son</label>
+            <input type="file" id="file-upload" accept="video/*,audio/*" onchange="previewFile()">
+        </div>
+        
+        <div class="preview-container" id="preview-container">
+            <p><strong>Fichier sélectionné :</strong> <span id="file-name"></span></p>
+            <div id="preview-media"></div>
+        </div>
+
+        <button class="button" onclick="uploadMedia()">Envoyer au serveur</button>
+        
+        <div class="status-message" id="status-message"></div>
+    </div>
+    
+    <script>
+        function previewFile() {
+            const fileInput = document.getElementById('file-upload');
+            const file = fileInput.files[0];
+            const fileName = document.getElementById('file-name');
+            const previewContainer = document.getElementById('preview-container');
+            const previewMedia = document.getElementById('preview-media');
+
+            if (!file) {
+                previewContainer.style.display = "none";
+                return;
+            }
+
+            fileName.textContent = file.name;
+            previewContainer.style.display = "block";
+
+            // Clear previous preview
+            previewMedia.innerHTML = "";
+
+            // Check if it's video or audio
+            if (file.type.startsWith("video/")) {
+                const videoElement = document.createElement("video");
+                videoElement.setAttribute("controls", "true");
+                videoElement.setAttribute("width", "100%");
+                const objectURL = URL.createObjectURL(file);
+                videoElement.src = objectURL;
+                previewMedia.appendChild(videoElement);
+            } else if (file.type.startsWith("audio/")) {
+                const audioElement = document.createElement("audio");
+                audioElement.setAttribute("controls", "true");
+                const objectURL = URL.createObjectURL(file);
+                audioElement.src = objectURL;
+                previewMedia.appendChild(audioElement);
+            }
+        }
+
+        function uploadMedia() {
+            const fileInput = document.getElementById('file-upload');
+            const file = fileInput.files[0];
+            const statusMessage = document.getElementById('status-message');
+            
+            if (!file) {
+                alert("Veuillez sélectionner un fichier à envoyer.");
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append("file", file);
+            
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                statusMessage.innerHTML = "Fichier téléchargé avec succès! Nom: " + data.file_info.filename;
+            })
+            .catch(error => {
+                statusMessage.innerHTML = "Erreur lors de l'envoi du fichier.";
+            });
+        }
+    </script>
+</body>
+</html>
