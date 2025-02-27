@@ -123,7 +123,16 @@
             }
         }
 
-        function uploadMedia() {
+        function readFileAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]); // Enlever le préfixe "data:..."
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function uploadMedia() {
             const fileInput = document.getElementById('file-upload');
             const file = fileInput.files[0];
             const statusMessage = document.getElementById('status-message');
@@ -132,17 +141,24 @@
                 alert("Veuillez sélectionner un fichier à envoyer.");
                 return;
             }
-            
-            const formData = new FormData();
-            formData.append("file", file);
+
+            const file_data = await readFileAsBase64(file);
+
+            const payload = {
+                filename: file.name,
+                content_type: file.type,
+                data: file_data  // Envoi des données en Base64
+            };
+
             
             fetch("/upload", {
                 method: "POST",
-                body: formData
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
             })
             .then(response => response.json())
             .then(data => {
-                statusMessage.innerHTML = "Fichier téléchargé avec succès! Nom: " + data.file_info.filename;
+                statusMessage.innerHTML = "Fichier traité avec succès! Nom: " + data.file_info.filename;
             })
             .catch(error => {
                 statusMessage.innerHTML = "Erreur lors de l'envoi du fichier.";
