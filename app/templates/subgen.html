@@ -5,71 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renaissance Media Uploader</title>
     <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f4f1ea;
-            font-family: 'Playfair Display', serif;
-            text-align: center;
-            color: #5a3e1b;
-            padding: 20px;
-        }
-        header {
-            font-family: 'Great Vibes', cursive;
-            font-size: 50px;
-            margin-bottom: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: auto;
-            padding: 20px;
-            border: 3px solid #5a3e1b;
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 10px;
-        }
-        .upload-box {
-            padding: 20px;
-            border: 2px dashed #5a3e1b;
-            border-radius: 10px;
-            background: #fff5e1;
-            margin: 20px 0;
-        }
-        .upload-box input {
-            display: none;
-        }
-        .upload-label {
-            font-size: 18px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            font-size: 20px;
-            color: white;
-            background: #5a3e1b;
-            text-decoration: none;
-            border-radius: 5px;
-            margin-top: 20px;
-            cursor: pointer;
-        }
-        .button:hover {
-            background: #8b5e34;
-        }
-        .status-message {
-            margin-top: 15px;
-            font-size: 18px;
-            font-weight: bold;
-            color: #5a3e1b;
-        }
-        .preview-container {
-            margin-top: 20px;
-            display: none; /* Hidden until a file is selected */
-        }
-    </style>
-</head>
+    <link rel="stylesheet" href="static/style.css" />
 <body>
     <header>Générateur de sous-titres</header>
+    <div class="background-video">
+        <video autoplay loop muted playsinline>
+            <source src="static/bg.mp4" type="video/mp4">
+            Votre navigateur ne supporte pas les vidéos HTML5.
+        </video>
+    </div>
     <div class="container">
+        
+        
         <p><em>"L'art de la vision et du son réunis en une seule expérience, le texte."</em></p>
         
         <div class="upload-box">
@@ -82,12 +29,33 @@
             <div id="preview-media"></div>
         </div>
 
-        <button class="button" onclick="uploadMedia()">Envoyer au serveur</button>
+        <form id="media-form" class="form-upload">
+            <label for="choice-select">Choisissez une option :</label>
+            <select class="choice-select" id="choice-select" name="media-choice">
+                <option value="video_with_sub">Video avec sous-titres</label>
+                <option value="video_and_sub">Video & sous-titres à part</option>
+                <option value="sub_only">Sous-titres seuls</option>
+                <option value="text_only">Texte uniquement</option>
+            </select>
+    
+            <label>
+                <input type="checkbox" id="translation-checkbox">
+                Activer la traduction
+            </label>
+    
+            <button class="button" type="button" onclick="uploadMedia()">Envoyer au serveur</button>
+        </form>
+
+        <button class="button" type="button" onclick="downloadFile()" class="download-button">Télécharger le fichier</button>
         
         <div class="status-message" id="status-message"></div>
     </div>
     
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({ log: true });
+
         function previewFile() {
             const fileInput = document.getElementById('file-upload');
             const file = fileInput.files[0];
@@ -132,25 +100,66 @@
             });
         }
 
-        async function uploadMedia() {
+        async function extractAudio(videoFile) {
+            if (!ffmpeg.isLoaded()) {
+                await ffmpeg.load();
+            }
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
+            
+            // Extract audio as mp3
+            await ffmpeg.run('-i', 'input.mp4', '-q:a', '0', '-map', 'a', 'output.mp3');
+            
+            const audioData = ffmpeg.FS('readFile', 'output.mp3');
+
+            // Create audio URL
+            const audioBlob = new Blob([audioData.buffer], { type: 'audio/mp3' });
+            const audioURL = URL.createObjectURL(audioBlob);
+
+            // Return the audio
+            const audio = new Audio(audioURL);
+            return audio
+        }
+
+        async function audioUrlToFile(url, filename) {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            return new File([blob], filename, { type: blob.type });
+        }
+
+        async function getFileData() {
             const fileInput = document.getElementById('file-upload');
             const file = fileInput.files[0];
-            const statusMessage = document.getElementById('status-message');
             
             if (!file) {
                 alert("Veuillez sélectionner un fichier à envoyer.");
                 return;
             }
 
-            const file_data = await readFileAsBase64(file);
+            var audioFile = file
+            if (file.type.includes("video")) {
+                const audioBlob = await extractAudio(file)
+                audioFile = await audioUrlToFile(
+                    audioBlob.src, "output.mp3"
+                )
+            }
+
+            const fileData = await readFileAsBase64(audioFile);
+
+            return fileData
+        }
+
+        async function uploadMedia() {
+            const translate = document.getElementById('translation-checkbox').checked;
+
+            const statusMessage = document.getElementById('status-message');
+
+            const fileData = await getFileData();
 
             const payload = {
-                filename: file.name,
-                content_type: file.type,
-                data: file_data  // Envoi des données en Base64
+                translate: translate,
+                data: fileData  // Envoi des données en Base64
             };
 
-            
             fetch("/upload", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -158,11 +167,130 @@
             })
             .then(response => response.json())
             .then(data => {
-                statusMessage.innerHTML = "Fichier traité avec succès! Nom: " + data.file_info.filename;
+                localStorage.setItem("subtitleFile", data.subtitles);
+                statusMessage.innerHTML = "Fichier traité avec succès!";
             })
             .catch(error => {
                 statusMessage.innerHTML = "Erreur lors de l'envoi du fichier.";
             });
+        }
+
+        function parseSrtText(srtContent) {
+            // Split the content by lines
+            const lines = srtContent.split(/\r?\n/);
+
+            const textLines = [];
+            let buffer = '';
+
+            lines.forEach(line => {
+                line = line.trim();
+
+                if (!line) {
+                    // Empty line indicates end of subtitle block
+                    if (buffer) {
+                        textLines.push(buffer.trim());
+                        buffer = '';
+                    }
+                } else if (!line.match(/^\d+$/) && !line.includes('-->')) {
+                    // Ignore line numbers and timestamps
+                    buffer += line + ' ';
+                }
+            });
+
+            // Catch any remaining buffer
+            if (buffer) {
+                textLines.push(buffer.trim());
+            }
+
+            // Join all text lines into a single string
+            return textLines.join(' ');
+        }
+
+        async function embedSubtitles(videoFile, srtContent, outputFilename = "output.mp4") {
+            if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+            // Load input video
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
+
+            // Load subtitles
+            const srtBlob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+            const srtBuffer = await srtBlob.arrayBuffer();
+            ffmpeg.FS('writeFile', 'subtitles.srt', new Uint8Array(srtBuffer));
+
+            // Run optimized ffmpeg command (fast preset, lower resolution, lower bitrate)
+            await ffmpeg.run(
+                '-i', 'input.mp4',
+                '-vf', 'subtitles=subtitles.srt',
+                '-preset', 'ultrafast',
+                '-crf', '30',
+                'output.mp4'
+            );
+
+            // Retrieve the output file
+            const data = ffmpeg.FS('readFile', 'output.mp4');
+
+            const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
+            return videoBlob
+        }
+
+
+        function downloadSubtitlesAsText() {
+            const storedSrt = localStorage.getItem("subtitleFile");
+            const link = document.createElement('a');
+            const srtText = parseSrtText(storedSrt)
+            const blob = new Blob([srtText], { type: "text/plain;charset=utf-8" })
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            link.download = "subtitles.txt"
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function downloadSubtitles() {
+            const storedSrt = localStorage.getItem("subtitleFile");
+            const link = document.createElement('a');
+            const blob = new Blob([storedSrt], { type: "text/plain;charset=utf-8" })
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            link.download = "subtitles.srt"
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        async function downloadVideoWithSubs() {
+            const storedSrt = localStorage.getItem("subtitleFile");
+            const link = document.createElement('a');
+            const fileInput = document.getElementById('file-upload');
+            const file = fileInput.files[0];
+            if (file.type.includes("video")) {
+                const blob = await embedSubtitles(file, storedSrt)
+                link.download = "output.mp4"
+                const url = URL.createObjectURL(blob);
+                link.href = url;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+        }
+
+        async function downloadFile() {
+            const choice = document.getElementById('choice-select').value;
+
+            if (choice === "text_only") {
+                downloadSubtitlesAsText()
+            } else if (choice === "sub_only") {
+                downloadSubtitles()
+            } else if (choice === "video_and_sub") {
+                await downloadVideoWithSubs()
+                downloadSubtitles()
+            } else if (choice === "video_with_sub") {
+                await downloadVideoWithSubs()
+            }
         }
     </script>
 </body>
