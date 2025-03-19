@@ -56,26 +56,49 @@
         const { createFFmpeg, fetchFile } = FFmpeg;
         const ffmpeg = createFFmpeg({ log: true });
 
-        function previewFile() {
+        function srtToVtt(srtContent) {
+            return 'WEBVTT\n\n' + srtContent.replace(/,/g, '.');
+        }
+
+
+        function previewFile(subtitles = false) {
             const fileInput = document.getElementById('file-upload');
             const file = fileInput.files[0];
             const fileName = document.getElementById('file-name');
             const previewContainer = document.getElementById('preview-container');
             const previewMedia = document.getElementById('preview-media');
-
+            
             if (!file) {
                 previewContainer.style.display = "none";
                 return;
             }
-
+            
             fileName.textContent = file.name;
             previewContainer.style.display = "block";
-
+            
             // Clear previous preview
             previewMedia.innerHTML = "";
-
-            // Check if it's video or audio
-            if (file.type.startsWith("video/")) {
+            
+            if (subtitles) {
+                const videoElement = document.createElement("video");
+                videoElement.setAttribute("controls", "true");
+                videoElement.setAttribute("width", "100%");
+                const objectURL = URL.createObjectURL(file);
+                videoElement.src = objectURL;
+                const trackElement = document.createElement("track")
+                const storedSrt = localStorage.getItem("subtitleFile");
+                const vttContent = srtToVtt(storedSrt);
+                const vttBlob = new Blob([vttContent], { type: "text/plain;charset=utf-8" })
+                const url = URL.createObjectURL(vttBlob);
+                trackElement.setAttribute("src", url)
+                trackElement.setAttribute("kind", "subtitles")
+                trackElement.setAttribute("srclang","active")
+                trackElement.setAttribute("label","Activated")
+                trackElement.setAttribute("default", true)
+                
+                videoElement.appendChild(trackElement)
+                previewMedia.appendChild(videoElement);
+            }else if (file.type.startsWith("video/")) {
                 const videoElement = document.createElement("video");
                 videoElement.setAttribute("controls", "true");
                 videoElement.setAttribute("width", "100%");
@@ -166,12 +189,17 @@
                 body: JSON.stringify(payload),
             })
             .then(response => response.json())
-            .then(data => {
+            .then(async data => {
                 localStorage.setItem("subtitleFile", data.subtitles);
-                statusMessage.innerHTML = "Fichier traité avec succès!";
+                const fileInput = document.getElementById('file-upload');
+                const file = fileInput.files[0];
+                if (file.type.includes("video")) {
+                    previewFile(true)
+                    statusMessage.innerHTML = "Fichier traité avec succès!";
+                }
             })
             .catch(error => {
-                statusMessage.innerHTML = "Erreur lors de l'envoi du fichier.";
+                statusMessage.innerHTML = "Erreur lors de l'envoi du fichier : " + error;
             });
         }
 
@@ -206,31 +234,67 @@
             return textLines.join(' ');
         }
 
-        async function embedSubtitles(videoFile, srtContent, outputFilename = "output.mp4") {
+        async function subtitlesInMetadata(videoFile, srtContent ) {
             if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
             // Load input video
-            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
+            ffmpeg.FS('writeFile', '__input.mp4', await fetchFile(videoFile));
 
             // Load subtitles
-            const srtBlob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
-            const srtBuffer = await srtBlob.arrayBuffer();
-            ffmpeg.FS('writeFile', 'subtitles.srt', new Uint8Array(srtBuffer));
+            const vttContent = srtToVtt(srtContent);
+            const vttBlob = new Blob([vttContent], { type: 'text/vtt' })
+            const vttBuffer = await vttBlob.arrayBuffer();
+            ffmpeg.FS('writeFile', 'subtitles.vtt', new Uint8Array(vttBuffer));
 
             // Run optimized ffmpeg command (fast preset, lower resolution, lower bitrate)
             await ffmpeg.run(
-                '-i', 'input.mp4',
-                '-vf', 'subtitles=subtitles.srt',
+                '-i', '__input.mp4',
+                '-i', 'subtitles.vtt',
                 '-preset', 'ultrafast',
                 '-crf', '30',
-                'output.mp4'
+                '-c', 'copy',
+                '-c:s', 'mov_text',
+                '__output.mp4'
             );
 
             // Retrieve the output file
-            const data = ffmpeg.FS('readFile', 'output.mp4');
+            const data = ffmpeg.FS('readFile', '__output.mp4');
 
             const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
             return videoBlob
+        }
+        async function embedSubtitles(videoFile, subtitlesFile ) {
+            const formData = new FormData();
+            formData.append('video', videoFile);
+            formData.append('subtitles', subtitlesFile);
+
+            try {
+                const response = await fetch('/embed_subtitles', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorDetail = await response.text();
+                    throw new Error(`Server error: ${errorDetail}`);
+                }
+
+                const processedVideoBlob = await response.blob();
+                const downloadUrl = URL.createObjectURL(processedVideoBlob);
+
+                // Trigger download of processed video
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = 'video_with_subtitles.mp4';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(downloadUrl);
+
+            } catch (error) {
+                console.error('Error uploading video and subtitles:', error);
+                alert('Failed to process video: ' + error.message);
+            }
         }
 
 
@@ -262,13 +326,22 @@
         }
 
         async function downloadVideoWithSubs() {
+            const fileInput = document.getElementById('file-upload');
+            const file = fileInput.files[0];
+            if (file.type.includes("video")) {
+                const storedSrt = localStorage.getItem("subtitleFile");
+                const blob = new Blob([storedSrt], { type: "text/plain;charset=utf-8" })
+                await embedSubtitles(file, blob)
+            }
+        }
+        async function downloadVideoSubsMetadata() {
             const storedSrt = localStorage.getItem("subtitleFile");
             const link = document.createElement('a');
             const fileInput = document.getElementById('file-upload');
             const file = fileInput.files[0];
             if (file.type.includes("video")) {
-                const blob = await embedSubtitles(file, storedSrt)
-                link.download = "output.mp4"
+                const blob = await subtitlesInMetadata(file, storedSrt)
+                link.download = "__output.mp4"
                 const url = URL.createObjectURL(blob);
                 link.href = url;
                 document.body.appendChild(link);
@@ -286,7 +359,7 @@
             } else if (choice === "sub_only") {
                 downloadSubtitles()
             } else if (choice === "video_and_sub") {
-                await downloadVideoWithSubs()
+                await downloadVideoSubsMetadata()
                 downloadSubtitles()
             } else if (choice === "video_with_sub") {
                 await downloadVideoWithSubs()
